@@ -32,7 +32,7 @@ var Std = Map{
 	"expires-before": bakery.FirstPartyCheckerFunc(expiresBefore),
 }
 
-type Map map[string] bakery.FirstPartyChecker
+type Map map[string]bakery.FirstPartyChecker
 
 func (m Map) CheckFirstPartyCaveat(cav string) error {
 	id, _, err := ParseCaveat(cav)

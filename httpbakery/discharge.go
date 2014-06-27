@@ -1,9 +1,9 @@
 package httpbakery
 
 type discharger struct {
-	store bakery.Storage
+	store   bakery.Storage
 	checker bakery.ThirdPartyChecker
-	key *KeyPair
+	key     *KeyPair
 }
 
 // DischargeHandler returns an HTTP handler that issues discharge macaroons
@@ -49,9 +49,9 @@ type discharger struct {
 //		expiry time of key
 func DischargeHandler(store bakery.Storage, checker bakery.ThirdPartyChecker, key *KeyPair) http.Handler {
 	d := &discharger{
-		store: store,
+		store:   store,
 		checker: checker,
-		key: key,
+		key:     key,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("discharge", d.discharge)

@@ -28,7 +28,7 @@ func NewMemStorage() Storage
 // the store.
 type storageItem struct {
 	Capability string
-	RootKey []byte
+	RootKey    []byte
 }
 
 type storage struct {

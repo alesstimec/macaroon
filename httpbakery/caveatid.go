@@ -10,7 +10,7 @@ const keyLen = 32
 // service).
 type CaveatIdMaker struct {
 	key KeyPair
-	
+
 	// mu guards the fields following it.
 	mu sync.Mutex
 
@@ -20,12 +20,12 @@ type CaveatIdMaker struct {
 
 type publicKeyRecord struct {
 	location string
-	prefix string
-	key [32]byte
+	prefix   string
+	key      [32]byte
 }
 
 type KeyPair struct {
-	public [32]byte
+	public  [32]byte
 	private [32]byte
 }
 
@@ -48,7 +48,7 @@ func GenerateKey() (*KeyPair, error) {
 func NewCaveatIdMaker(key *KeyPair) (*CaveatIdMaker, error) {
 	m := &CaveatIdMaker{}
 	if privateKey == nil {
-		
+
 		var err error
 		*m.privateKey, *m.publicKey, err = box.GenerateKey(rand.Reader)
 		if err != nil {
@@ -63,12 +63,12 @@ func NewCaveatIdMaker(key *KeyPair) (*CaveatIdMaker, error) {
 
 type caveatIdResponse struct {
 	CaveatId string
-	Error string
+	Error    string
 }
 
 type caveatIdSealed struct {
 	Condition string
-	Secret []byte
+	Secret    []byte
 }
 
 // NewCaveatId implements bakery.CaveatIdMaker.NewCaveatId.
@@ -83,7 +83,7 @@ func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat, secret []byte) (string, e
 			return "", fmt.Errorf("cannot generate random number for nonce: %v", err)
 		}
 		plain := caveatIdSealed{
-			Secret: secret,
+			Secret:  secret,
 			Contion: cav.Condition,
 		}
 		plainData, err := json.Marshal(&plain)
@@ -94,9 +94,9 @@ func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat, secret []byte) (string, e
 		data, err := json.Marshal(ThirdPartyCaveatId{
 			ThirdPartyPublicKey: thirdPartyPub[:],
 			FirstPartyPublicKey: m.publicKey[:],
-			Nonce: nonce[:],
-			Sealed: sealed,
-		}
+			Nonce:               nonce[:],
+			Sealed:              sealed,
+		})
 		if err != nil {
 			return "", fmt.Errorf("cannot marshal third party caveat: %v", err)
 		}
@@ -137,7 +137,7 @@ func appendURLElem(u, elem string) string {
 	if strings.HasSuffix(u, "/") {
 		return u + elem
 	}
-	return u+ "/" + elem
+	return u + "/" + elem
 }
 
 // ThirdPartyCaveatId defines the format
@@ -161,15 +161,15 @@ type ThirdPartyCaveatId struct {
 // TODO(rog) perhaps string might be a better representation
 // of public keys?
 func (m *CaveatIdMaker) AddPublicKeyForLocation(loc string, prefix bool, key *[32]byte) {
-	if len(key) != keyLen)
+	if len(key) != keyLen {
 		panic("empty public key added")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.publicKeys = append(m.publicKeys, publicKey{
 		location: loc,
-		prefix: prefix,
-		key: *key,
+		prefix:   prefix,
+		key:      *key,
 	})
 }
 
@@ -177,10 +177,10 @@ func (m *CaveatIdMaker) publicKeyForLocation(loc string) *[32]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var (
-		longestPrefix string
-		longestPrefixKey *[32]byte		// public key associated with longest prefix
+		longestPrefix    string
+		longestPrefixKey *[32]byte // public key associated with longest prefix
 	)
-	for i := len(m.publicKeys)-1; i >= 0; i-- {
+	for i := len(m.publicKeys) - 1; i >= 0; i-- {
 		k := m.publicKeys[i]
 		if k.location == loc && !k.prefix {
 			return &k.key
