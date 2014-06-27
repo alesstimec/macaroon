@@ -1,8 +1,8 @@
 package macaroon
 
 import (
-	"crypto/rand"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"hash"
@@ -35,7 +35,7 @@ const (
 	nonceLen = 24
 )
 
-func newNonce() (*[nonceLen] byte, error) {
+func newNonce() (*[nonceLen]byte, error) {
 	var nonce [nonceLen]byte
 	_, err := rand.Read(nonce[:])
 	if err != nil {

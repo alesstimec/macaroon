@@ -3,8 +3,8 @@ package macaroon_test
 import (
 	"testing"
 
-	gc "gopkg.in/check.v1"
 	"github.com/rogpeppe/macaroon"
+	gc "gopkg.in/check.v1"
 	_ "net/http"
 )
 
@@ -12,7 +12,7 @@ func TestPackage(t *testing.T) {
 	gc.TestingT(t)
 }
 
-type macaroonSuite struct {}
+type macaroonSuite struct{}
 
 var _ = gc.Suite(&macaroonSuite{})
 
@@ -36,7 +36,7 @@ func (*macaroonSuite) TestFirstPartyCaveat(c *gc.C) {
 	m := macaroon.New(rootKey, []byte("some id"), "a location")
 
 	caveats := map[string]bool{
-		"a caveat": true,
+		"a caveat":       true,
 		"another caveat": true,
 	}
 	tested := make(map[string]bool)
@@ -70,7 +70,7 @@ func (*macaroonSuite) TestThirdPartyCaveat(c *gc.C) {
 
 	dm := macaroon.New(caveat.RootKey, id, "remote location")
 	dm.Bind(m.Signature())
-	ok, err := m.Verify(rootKey, never, map[string] *macaroon.Macaroon {
+	ok, err := m.Verify(rootKey, never, map[string]*macaroon.Macaroon{
 		string(id): dm,
 	})
 	c.Assert(err, gc.IsNil)

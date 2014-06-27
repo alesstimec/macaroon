@@ -1,6 +1,8 @@
 package bakery
 
 // Storage defines storage for macaroons.
+// TODO(rog) define whether these methods must
+// be thread-safe or not.
 type Storage interface {
 	// Put stores the item at the given location, overwriting
 	// any item that might already be there.

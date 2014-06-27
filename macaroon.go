@@ -6,12 +6,13 @@
 // It still in its very early stages, having no support for serialisation
 // and only rudimentary test coverage.
 package macaroon
+
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"crypto/sha256"
-	"crypto/hmac"
 )
 
 // Macaroon holds a macaroon.
@@ -44,7 +45,7 @@ func (cav *Caveat) IsThirdParty() bool {
 func New(rootKey, id []byte, loc string) *Macaroon {
 	m := &Macaroon{
 		location: loc,
-		id: []byte(id),
+		id:       []byte(id),
 	}
 	m.sig = keyedHash(rootKey, m.id)
 	return m
@@ -77,8 +78,8 @@ func (m *Macaroon) Signature() []byte {
 
 func (m *Macaroon) addCaveat(caveatId, verificationId []byte, loc string) {
 	m.caveats = append(m.caveats, Caveat{
-		location: loc,
-		caveatId: caveatId,
+		location:       loc,
+		caveatId:       caveatId,
 		verificationId: verificationId,
 	})
 	sig := keyedHasher(m.sig)
@@ -104,7 +105,7 @@ func (m *Macaroon) AddFirstPartyCaveat(caveat string) {
 // a third-party caveat id.
 type ThirdPartyCaveatId struct {
 	RootKey []byte
-	Caveat string
+	Caveat  string
 }
 
 // DecryptThirdPartyCaveatId decrypts a third-party caveat
@@ -173,9 +174,6 @@ func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) (bool, error
 }
 
 func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat string) (bool, error), discharges map[string]*Macaroon) (bool, error) {
-	if len(rootSig) == 0 {
-		rootSig = m.sig
-	}
 	caveatSig := keyedHash(rootKey, m.id)
 	for i, cav := range m.caveats {
 		if cav.IsThirdParty() {
