@@ -2,7 +2,13 @@ package httpbakery
 
 const keyLen = 32
 
-type CaveatMaker struct {
+// CaveatIdMaker implements bakery.CaveatIdMaker. It
+// knows how to make caveat ids by communicating
+// with the caveat id creation service served by DischargeHandler,
+// and also how to create caveat ids using public key
+// cryptography (also recognised by the DischargeHandler
+// service).
+type CaveatIdMaker struct {
 	privateKey [keyLen]byte
 	publicKey [keyLen]byte
 	
@@ -19,8 +25,12 @@ type publicKeyRecord struct {
 	key [32]byte
 }
 
-func NewCaveatMaker(privateKey, publicKey *[32]byte) (*CaveatMaker, error) {
-	m := &CaveatMaker{}
+// NewCaveatIdMaker returns a new CaveatIdMaker using the given
+// private and public keys, which should have been created using
+// the NACL box.GenerateKey function. The keys may be nil,
+// in which case new keys will be generated automatically.
+func NewCaveatIdMaker(privateKey, publicKey *[32]byte) (*CaveatIdMaker, error) {
+	m := &CaveatIdMaker{}
 	if privateKey == nil {
 		var err error
 		*m.privateKey, *m.publicKey, err = box.GenerateKey(rand.Reader)
@@ -39,8 +49,8 @@ type caveatIdResponse struct {
 	Error string
 }
 
-// NewCaveatId implements bakery.CaveatMaker.NewCaveatId.
-func (m *CaveatMaker) NewCaveatId(cav bakery.Caveat) (string, error) {
+// NewCaveatId implements bakery.CaveatIdMaker.NewCaveatId.
+func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat) (string, error) {
 	if cav.Location == "" {
 		return "", fmt.Errorf("cannot make caveat id for first party caveat")
 	}
@@ -120,7 +130,7 @@ type ThirdPartyCaveatId struct {
 // match will be chosen.
 // TODO(rog) perhaps string might be a better representation
 // of public keys?
-func (m *CaveatMaker) AddPublicKeyForLocation(loc string, prefix bool, key *[32]byte) {
+func (m *CaveatIdMaker) AddPublicKeyForLocation(loc string, prefix bool, key *[32]byte) {
 	if len(key) != keyLen)
 		panic("empty public key added")
 	}
@@ -133,7 +143,7 @@ func (m *CaveatMaker) AddPublicKeyForLocation(loc string, prefix bool, key *[32]
 	})
 }
 
-func (m *CaveatMaker) publicKeyForLocation(loc string) *[32]byte {
+func (m *CaveatIdMaker) publicKeyForLocation(loc string) *[32]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var (

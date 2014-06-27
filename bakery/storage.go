@@ -23,3 +23,34 @@ var ErrNotFound = errors.New("item not found")
 // NewMemStorage returns an implementation of Storage
 // that stores all items in memory.
 func NewMemStorage() Storage
+
+// storageItem is the format used to store items in
+// the store.
+type storageItem struct {
+	Capability string
+	RootKey []byte
+}
+
+type storage struct {
+	store Storage
+}
+
+func (s storage) Get(location string) (*storageItem, error) {
+	s, err := s.store.Get(location)
+	if err != nil {
+		return nil, err
+	}
+	var item storageItem
+	if err := json.Unmarshal([]byte(s), &item); err != nil {
+		return nil, fmt.Errorf("badly formatted item in store: %v", err)
+	}
+	return &item, nil
+}
+
+func (s storage) Put(location string, item *storageItem) error {
+	data, err := json.Marshal(item)
+	if err != nil {
+		panic(fmt.Errorf("cannot marshal storage item: %v", err))
+	}
+	return s.store.Put(location, string(data))
+}
