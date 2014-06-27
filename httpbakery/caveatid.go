@@ -66,8 +66,13 @@ type caveatIdResponse struct {
 	Error string
 }
 
+type caveatIdSealed struct {
+	Condition string
+	Secret []byte
+}
+
 // NewCaveatId implements bakery.CaveatIdMaker.NewCaveatId.
-func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat) (string, error) {
+func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat, secret []byte) (string, error) {
 	if cav.Location == "" {
 		return "", fmt.Errorf("cannot make caveat id for first party caveat")
 	}
@@ -77,12 +82,20 @@ func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat) (string, error) {
 		if _, err := rand.Read(nonce[:]); err != nil {
 			return "", fmt.Errorf("cannot generate random number for nonce: %v", err)
 		}
-		sealed := box.Seal(nil, cav.Condition, &nonce, thirdPartyPub, &m.privateKey)
+		plain := caveatIdSealed{
+			Secret: secret,
+			Contion: cav.Condition,
+		}
+		plainData, err := json.Marshal(&plain)
+		if err != nil {
+			return "", fmt.Errorf("cannot marshal %#v: %v", &plain, err)
+		}
+		sealed := box.Seal(nil, plainData, &nonce, thirdPartyPub, &m.privateKey)
 		data, err := json.Marshal(ThirdPartyCaveatId{
 			ThirdPartyPublicKey: thirdPartyPub[:],
 			FirstPartyPublicKey: m.publicKey[:],
 			Nonce: nonce[:],
-			Id: sealed,
+			Sealed: sealed,
 		}
 		if err != nil {
 			return "", fmt.Errorf("cannot marshal third party caveat: %v", err)

@@ -45,7 +45,7 @@ func NewService(
 // third parties. It is left abstract to allow location-dependent
 // caveat id creation.
 type CaveatIdMaker interface {
-	NewCaveatId(caveat Caveat) (string, error)
+	NewCaveatId(caveat Caveat, secret []byte) (string, error)
 }
 
 // Checker returns the checker used by the service.
@@ -173,11 +173,15 @@ func (req *Request) Check(capability *Capability) error {
 			m.AddFirstPartyCaveat(cav.Condition)
 			continue
 		}
-		id, err := req.svc.caveatIdMaker.NewCaveatId(cav)
+		secret, err := randomBytes(24)
+		if err != nil {
+			return fmt.Errorf("cannot generate third party secret: %v", err)
+		}
+		id, err := req.svc.caveatIdMaker.NewCaveatId(cav, secret)
 		if err != nil {
 			return fmt.Errorf("cannot create third party caveat id at %q: %v", cav.Location, err)
 		}
-		if err := m.AddThirdPartyCaveat(id, cav.Location); err != nil {
+		if err := m.AddThirdPartyCaveat(secret, id, cav.Location); err != nil {
 			return fmt.Errorf("cannot add third party caveat: %v", err)
 		}
 	}
