@@ -9,8 +9,7 @@ const keyLen = 32
 // cryptography (also recognised by the DischargeHandler
 // service).
 type CaveatIdMaker struct {
-	privateKey [keyLen]byte
-	publicKey [keyLen]byte
+	key KeyPair
 	
 	// mu guards the fields following it.
 	mu sync.Mutex
@@ -25,13 +24,31 @@ type publicKeyRecord struct {
 	key [32]byte
 }
 
-// NewCaveatIdMaker returns a new CaveatIdMaker using the given
-// private and public keys, which should have been created using
-// the NACL box.GenerateKey function. The keys may be nil,
+type KeyPair struct {
+	public [32]byte
+	private [32]byte
+}
+
+// TODO(rog) marshal/unmarshal functions for KeyPair
+
+func GenerateKey() (*KeyPair, error) {
+	var key KeyPair
+	priv, pub, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	key.public = *pub
+	key.private = *priv
+	return &key, nil
+}
+
+// NewCaveatIdMaker returns a new CaveatIdMaker key, which should
+// have been created using the NACL box.GenerateKey function. The keys may be nil,
 // in which case new keys will be generated automatically.
-func NewCaveatIdMaker(privateKey, publicKey *[32]byte) (*CaveatIdMaker, error) {
+func NewCaveatIdMaker(key *KeyPair) (*CaveatIdMaker, error) {
 	m := &CaveatIdMaker{}
 	if privateKey == nil {
+		
 		var err error
 		*m.privateKey, *m.publicKey, err = box.GenerateKey(rand.Reader)
 		if err != nil {
