@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	_ "net/http"
 	"github.com/rogpeppe/macaroon"
 	gc "gopkg.in/check.v1"
+	_ "net/http"
 )
 
 func TestPackage(t *testing.T) {
