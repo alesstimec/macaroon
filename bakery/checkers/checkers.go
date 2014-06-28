@@ -29,7 +29,7 @@ func ThirdParty(location, identifier string, args ...interface{}) bakery.Caveat 
 }
 
 var Std = Map{
-	"expires-before": bakery.FirstPartyCheckerFunc(expiresBefore),
+	"time-before": bakery.FirstPartyCheckerFunc(timeBefore),
 }
 
 type Map map[string]bakery.FirstPartyChecker

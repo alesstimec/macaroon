@@ -1,22 +1,23 @@
 package main
 
 func main() {
-	authEndpoint := serve(authServer)
-	serverEndpoint := serve(func() (http.Handler, error) {
-		return targetService(authEndpoint)
+	authEndpoint := serve(authService)
+	serverEndpoint := serve(func(endpoint string) (http.Handler, error) {
+		return targetService(endpoint, authEndpoint)
 	})
 	client(serverEndpoint)
 }
 
-func serve(newHandler func() (http.Handler, error)) (endpointURL string) {
-	handler, err := newHandler()
-	if err != nil {
-		log.Fatal(err)
-	}
+func serve(newHandler func(string) (http.Handler, error)) (endpointURL string) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		log.Fatal(err)
 	}
+	endpointURL = "http://" + listener.Addr().String()
+	handler, err := newHandler(endpointURL)
+	if err != nil {
+		log.Fatal(err)
+	}
 	go http.Serve(listener, handler)
-	return "http://" + listener.Addr().String()
+	return endpointURL
 }

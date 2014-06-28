@@ -72,6 +72,7 @@ type caveatIdSealed struct {
 }
 
 // NewCaveatId implements bakery.CaveatIdMaker.NewCaveatId.
+// This is the client side of DischargeHandler's /create endpoint.
 func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat, secret []byte) (string, error) {
 	if cav.Location == "" {
 		return "", fmt.Errorf("cannot make caveat id for first party caveat")

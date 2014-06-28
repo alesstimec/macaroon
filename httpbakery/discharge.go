@@ -26,7 +26,7 @@ type discharger struct {
 // POST /discharge
 //	params:
 //		id: id of macaroon to discharge
-//		location: location of original macaroon (optional)
+//		location: location of original macaroon (optional (?))
 //	result:
 //		{
 //			Macaroon: macaroon in json format
@@ -62,15 +62,24 @@ func DischargeHandler(store bakery.Storage, checker bakery.ThirdPartyChecker, ke
 	return mux
 }
 
+type dischargeResponse struct {
+	Error string
+	Macaroon *macaroon.Macaroon
+}
+
 func (d *discharger) discharge(w http.ResponseWriter, req *http.Request) {
-	if err := req.ParseForm(); err != nil {
-		http.Error(fmt.Sprintf("cannot parse form: %v", err), http.StatusBadRequest)
+	if req.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
+	req.ParseForm()
 	id := req.Form.Get("id")
 	location := req.Form.Get("location")
+	
 }
 
 func (d *discharger) create(w http.ResponseWriter, r *http.Request) {
+
 }
 
 func (d *discharger) publickey(w http.ResponseWriter, r *http.Request) {

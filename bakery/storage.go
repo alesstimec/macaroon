@@ -1,8 +1,7 @@
 package bakery
 
 // Storage defines storage for macaroons.
-// TODO(rog) define whether these methods must
-// be thread-safe or not.
+// Calling its methods concurrently is allowed.
 type Storage interface {
 	// Put stores the item at the given location, overwriting
 	// any item that might already be there.
@@ -22,7 +21,38 @@ var ErrNotFound = errors.New("item not found")
 
 // NewMemStorage returns an implementation of Storage
 // that stores all items in memory.
-func NewMemStorage() Storage
+func NewMemStorage() Storage {
+	return &memStorage{
+		values: make(map[string]string),
+	}
+}
+
+type memStorage struct {
+	mu sync.Mutex
+	values map[string] string
+}
+
+func (s memStorage) Put(location, item string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[location] = item
+}
+
+func (s memStorage) Get(location string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.values[location]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return item, nil
+}
+
+func (s memStorage) Del(location string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, location)
+}
 
 // storageItem is the format used to store items in
 // the store.
