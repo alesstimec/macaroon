@@ -8,4 +8,5 @@ package httpbakery
 // If c.Jar field is non-nil, the macaroons will be
 // stored there and made available to subsequent requests.
 func Do(c *http.Client, req *http.Request) (*http.Response, error) {
+	panic("unimplemented")
 }

@@ -1,5 +1,12 @@
 package checkers
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
 func ExpiresBefore(t time.Time) bakery.Caveat {
 	return ThirdParty("expires", t)
 }

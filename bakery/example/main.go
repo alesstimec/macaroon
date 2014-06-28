@@ -1,5 +1,11 @@
 package main
 
+import (
+	"log"
+	"net"
+	"net/http"
+)
+
 func main() {
 	authEndpoint := serve(authService)
 	serverEndpoint := serve(func(endpoint string) (http.Handler, error) {

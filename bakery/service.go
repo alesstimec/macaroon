@@ -1,13 +1,22 @@
 package bakery
 
+import (
+	"crypto/rand"
+	"fmt"
+	"log"
+	"sync"
+
+	"github.com/rogpeppe/macaroon"
+)
+
 // Service represents a service which can delegate
 // authorization checks to other services,
 // and may also be used as a delegation endpoint
 // to discharge authorization checks from other services.
 type Service struct {
-	location string
-	store         Storage
-	checker       FirstPartyChecker
+	location        string
+	store           Storage
+	checker         FirstPartyChecker
 	caveatIdEncoder CaveatIdEncoder
 }
 
@@ -43,11 +52,16 @@ func NewService(p NewServiceParams) *Service {
 		p.Store = NewMemStorage()
 	}
 	svc := &Service{
-		location: p.Location,
-		store:         storage{p.Store},
-		checker:       p.Checker,
+		location:        p.Location,
+		store:           storage{p.Store},
+		checker:         p.Checker,
 		caveatIdEncoder: p.CaveatIdEncoder,
 	}
+}
+
+// CaveatIdDecoder decodes caveat ids created by a CaveatIdEncoder.
+type CaveatIdDecoder interface {
+	DecodeCaveatId(id string) (rootKey []byte, condition string, err error)
 }
 
 // CaveatIdEncoder can create caveat ids for
@@ -93,7 +107,7 @@ type Request struct {
 	checker FirstPartyChecker
 
 	// mu guards the fields following it.
-	mu        sync.Mutex
+	mu sync.Mutex
 
 	// macaroons holds the set of macaroons currently associated
 	// with the request.
@@ -160,7 +174,6 @@ func (req *Request) Check(capability *Capability) error {
 	}
 }
 
-
 // NewMacaroon implements NewMacarooner.NewMacaroon.
 func (svc *Service) NewMacaroon(id string, capability string, caveats []Caveat) (*macaroon.Macaroon, error) {
 	rootKey, err := randomBytes(24)
@@ -181,7 +194,7 @@ func (svc *Service) NewMacaroon(id string, capability string, caveats []Caveat) 
 	// garbage collect it at an appropriate time.
 	if err := svc.store.Put(m.Id(), &storageItem{
 		Capability: capability,
-		RootKey: rootKey,
+		RootKey:    rootKey,
 	}); err != nil {
 		return nil, fmt.Errorf("cannot save macaroon to store: %v", err)
 	}

@@ -1,11 +1,18 @@
 package main
 
+import (
+	"net/http"
+
+	"github.com/rogpeppe/macaroon/bakery"
+	"github.com/rogpeppe/macaroon/httpbakery"
+)
+
 // Authorization service.
 // This service can act as a checker for third party caveats.
 
 func authService(endpoint string) http.Handler {
 	mux := http.NewServeMux()
-	svc.AddDischargeHandler(mux, thirdPartyChecker, "/")
+	httpbakery.AddDischargeHandler("/", mux, svc, thirdPartyChecker)
 	return mux
 }
 

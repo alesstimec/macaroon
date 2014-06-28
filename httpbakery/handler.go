@@ -23,11 +23,11 @@ type dischargeRequestedResponse struct {
 // along with the discharge macaroons.
 func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, originalErr error) error {
 	if originalErr == nil {
-		originalErr = fmt.Errorf("unauthorized"),
+		originalErr = fmt.Errorf("unauthorized")
 	}
 	respData, err := m.MarshalJSON(dischargeRequested{
 		Error: originalErr.Error(),
-		ErrorCode: "macaroon discharge required"
+		ErrorCode: "macaroon discharge required",
 		Macaroon: m,
 	})
 	if err != nil {

@@ -1,5 +1,12 @@
 package bakery
 
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+)
+
 // Storage defines storage for macaroons.
 // Calling its methods concurrently is allowed.
 type Storage interface {
@@ -28,8 +35,8 @@ func NewMemStorage() Storage {
 }
 
 type memStorage struct {
-	mu sync.Mutex
-	values map[string] string
+	mu     sync.Mutex
+	values map[string]string
 }
 
 func (s memStorage) Put(location, item string) error {

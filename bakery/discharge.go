@@ -1,19 +1,15 @@
 package bakery
 
-// CaveatIdDecoder decodes caveat ids created by a CaveatIdEncoder.
-type CaveatIdDecoder interface {
-	DecodeCaveatId(id string) (rootKey []byte, condition string, err error)
-}
+import "github.com/rogpeppe/macaroon"
 
 // NewMacaroon mints a new macaroon with the given id, capability and caveats.
 // If the id is empty, a random id will be used.
 type NewMacarooner interface {
-	NewMacaroon(id string, capability string, caveats []Caveat) (*macaroon.Macaroon, error) 
+	NewMacaroon(id string, capability string, caveats []Caveat) (*macaroon.Macaroon, error)
 }
 
-// DischargeParams holds the parameters for a
-// discharge request.
-type DischargeParams struct {
+// A Discharger can be used to discharge third party macaroons
+type Discharger struct {
 	// Checker is used to check the caveat's condition.
 	Checker ThirdPartyChecker
 
@@ -27,7 +23,7 @@ type DischargeParams struct {
 
 // Discharge creates a macaroon that discharges the third party
 // caveat with the given id.
-func Discharge(id string, p *DischargeParams) (*macaroon.Macaroon, error) {
+func (d *Discharger) Discharge(id string) (*macaroon.Macaroon, error) {
 	rootKey, condition, err := d.decoder.DecodeCaveatId(id)
 	if err != nil {
 		return nil, err

@@ -1,7 +1,13 @@
 package main
 
+import (
+	"fmt"
+	"net/http"
+	"time"
+)
+
 type myServer struct {
-	svc *bakery.Service
+	svc          *bakery.Service
 	authEndpoint string
 	endpoint
 }
@@ -9,7 +15,7 @@ type myServer struct {
 func targetService(endpoint, authEndpoint string) (http.Handler, error) {
 	srv := &myServer{
 		svc: bakery.NewService(bakery.NewServiceParams{
-			Location: endpoint,
+			Location:         endpoint,
 			NewCaveatIdMaker: httpbakery.NewCaveatIdMaker(nil),
 		}),
 		authEndpoint: authEndpoint,
@@ -63,7 +69,7 @@ func (srv *myServer) writeError(w http.ResponseWriter, err error) {
 		caveats = []bakery.Caveat{
 			checkers.TimeBefore(time.Now().Add(5 * time.Minute)),
 			checkers.ThirdParty(srv.authEndpoint, "access-allowed"),
-		}, 
+		}
 	default:
 		fail(http.StatusInternalServerError, "capability %q not recognised", verr.RequiredCapability)
 		return
@@ -83,7 +89,7 @@ var canAccessMe = &httpbakery.Capability{
 		// TODO this won't work - perhaps we
 		// should have a function that creates the
 		// caveats when needed instead of a literal slice.
-		checkers.ExpiresBefore(time.Now().Add(5*time.Minute)),
+		checkers.ExpiresBefore(time.Now().Add(5 * time.Minute)),
 		checkers.ThirdParty(AuthServerLocation, "access-allowed"),
 	},
 }
