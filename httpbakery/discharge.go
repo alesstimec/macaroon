@@ -1,11 +1,12 @@
 package httpbakery
+
 import (
 	"crypto/rand"
-	"fmt"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
-	"encoding/base64"
 
 	"github.com/rogpeppe/macaroon"
 	"github.com/rogpeppe/macaroon/bakery"
@@ -14,9 +15,9 @@ import (
 // TODO(rog) perhaps rename this file to "thirdparty.go" ?
 
 type dischargeHandler struct {
-	discharger *bakery.Discharger
 	key     *KeyPair
-	store bakery.Storage
+	svc     *bakery.Service
+	checker func(req *http.Request, cav string) ([]bakery.Caveat, error)
 }
 
 // DischargeHandler returns an HTTP handler that issues discharge macaroons
@@ -61,20 +62,16 @@ type dischargeHandler struct {
 //		public key of service
 //		expiry time of key
 func AddDischargeHandler(
-		root string,
-		mux *http.ServeMux,
-		svc *bakery.Service,
-		key *KeyPair,
-		checker bakery.ThirdPartyChecker,
+	root string,
+	mux *http.ServeMux,
+	svc *bakery.Service,
+	key *KeyPair,
+	checker func(req *http.Request, cav string) ([]bakery.Caveat, error),
 ) {
 	d := &dischargeHandler{
-		discharger: &bakery.Discharger{
-			Checker: checker,
-			Decoder: NewCaveatIdDecoder(svc.Store(), key),
-			Factory: svc,
-		},
-		key: key,
-		store: svc.Store(),
+		key:     key,
+		svc:     svc,
+		checker: checker,
 	}
 	mux.HandleFunc(path.Join(root, "discharge"), d.serveDischarge)
 	mux.HandleFunc(path.Join(root, "create"), d.serveCreate)
@@ -94,11 +91,23 @@ func (d *dischargeHandler) serveDischarge(w http.ResponseWriter, req *http.Reque
 	}
 	req.ParseForm()
 	id := req.Form.Get("id")
+	if id == "" {
+		d.badRequest(w, "id attribute is empty")
+		return
+	}
+	checker := func(cav string) ([]bakery.Caveat, error) {
+		return d.checker(req, cav)
+	}
+	discharger := &bakery.Discharger{
+		Checker: bakery.ThirdPartyCheckerFunc(checker),
+		Decoder: NewCaveatIdDecoder(d.svc.Store(), d.key),
+		Factory: d.svc,
+	}
 
 	// TODO(rog) pass location into discharge
 	// location := req.Form.Get("location")
 
-	m, err := d.discharger.Discharge(id)
+	m, err := discharger.Discharge(id)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("cannot discharge: %v", err), http.StatusForbidden)
 		return
@@ -119,7 +128,7 @@ func (d *dischargeHandler) badRequest(w http.ResponseWriter, f string, a ...inte
 }
 
 type thirdPartyCaveatIdRecord struct {
-	RootKey []byte
+	RootKey   []byte
 	Condition string
 }
 
@@ -150,13 +159,13 @@ func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request)
 	internalId := fmt.Sprintf("third-party-%x", idBytes)
 	recordBytes, err := json.Marshal(thirdPartyCaveatIdRecord{
 		Condition: condition,
-		RootKey: rootKey,
+		RootKey:   rootKey,
 	})
 	if err != nil {
 		d.internalError(w, "cannot marshal caveat id record: %v", err)
 		return
 	}
-	err = d.store.Put(internalId, string(recordBytes))
+	err = d.svc.Store().Put(internalId, string(recordBytes))
 	if err != nil {
 		d.internalError(w, "cannot store caveat id record: %v", err)
 		return
@@ -176,7 +185,7 @@ func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(respBytes)	
+	w.Write(respBytes)
 }
 
 func (d *dischargeHandler) servePublicKey(w http.ResponseWriter, r *http.Request) {

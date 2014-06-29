@@ -9,10 +9,6 @@ import (
 	"github.com/rogpeppe/macaroon/bakery"
 )
 
-func ExpiresBefore(t time.Time) bakery.Caveat {
-	return ThirdParty("expires", t)
-}
-
 type StructuredCaveat struct {
 	Identifier string
 	Args       []interface{}
@@ -41,17 +37,36 @@ var Std = Map{
 	"time-before": bakery.FirstPartyCheckerFunc(timeBefore),
 }
 
-type Map map[string]bakery.FirstPartyChecker
+func TimeBefore(t time.Time) bakery.Caveat {
+	return ThirdParty("time-before", t.Format(time.RFC3339))
+}
+
+func timeBefore(cav string) error {
+	_, timeStr, err := ParseCaveat(cav)
+	if err != nil {
+		return err
+	}
+	t, err := time.Parse(time.RFC3339, timeStr)
+	if err != nil {
+		return err
+	}
+	if time.Now().After(t) {
+		return fmt.Errorf("after expiry time")
+	}
+	return nil
+}
+
+type Map map[string]bakery.FirstPartyCheckerFunc
 
 func (m Map) CheckFirstPartyCaveat(cav string) error {
 	id, _, err := ParseCaveat(cav)
 	if err != nil {
-		return fmt.Errorf("cannot parse caveat %q: %v", s, err)
+		return fmt.Errorf("cannot parse caveat %q: %v", cav, err)
 	}
 	if c := m[id]; c != nil {
 		return c.CheckFirstPartyCaveat(cav)
 	}
-	return bakery.ErrCaveatNotRecognised
+	return bakery.ErrCaveatNotRecognized
 }
 
 // PushFirstPartyChecker returns a checker that first
@@ -79,7 +94,7 @@ func ParseCaveat(cav string) (string, string, error) {
 	if cav == "" {
 		return "", "", fmt.Errorf("empty caveat")
 	}
-	i := strings.IndexByte(' ')
+	i := strings.IndexByte(cav, ' ')
 	if i <= 0 {
 		return cav, "", nil
 	}

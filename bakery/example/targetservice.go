@@ -4,29 +4,37 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/rogpeppe/macaroon/bakery"
+	"github.com/rogpeppe/macaroon/bakery/checkers"
+	"github.com/rogpeppe/macaroon/httpbakery"
 )
 
 type myServer struct {
 	svc          *bakery.Service
 	authEndpoint string
-	endpoint
+	endpoint     string
 }
 
 func targetService(endpoint, authEndpoint string) (http.Handler, error) {
+	enc, err := httpbakery.NewCaveatIdEncoder(nil)
+	if err != nil {
+		return nil, err
+	}
 	srv := &myServer{
 		svc: bakery.NewService(bakery.NewServiceParams{
-			Location:         endpoint,
-			NewCaveatIdMaker: httpbakery.NewCaveatIdMaker(nil),
+			Location:        endpoint,
+			CaveatIdEncoder: enc,
 		}),
 		authEndpoint: authEndpoint,
 	}
-	return srv
+	return srv, nil
 }
 
-func (srv *myServer) ServeHTTP(req *http.Request, w http.ResponseWriter) {
+func (srv *myServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	breq := srv.svc.NewRequest(srv.checkers(req))
 	if err := breq.Check("can-access-me"); err != nil {
-		srv.writeError(err)
+		srv.writeError(w, err)
 		return
 	}
 	fmt.Fprintf(w, "success\n")
@@ -37,20 +45,21 @@ func (svc *myServer) checkers(req *http.Request) bakery.FirstPartyChecker {
 		"remote-address": func(s string) error {
 			// TODO(rog) do we want to distinguish between
 			// the two kinds of errors below?
-			_, arg, err := checkers.ParseCondition(s)
+			_, addr, err := checkers.ParseCaveat(s)
 			if err != nil {
 				return err
 			}
-			if req.RemoteHost != addr {
+			if req.RemoteAddr != addr {
 				return fmt.Errorf("remote address mismatch (need %q)", addr)
 			}
+			return nil
 		},
 	}
 }
 
 func (srv *myServer) writeError(w http.ResponseWriter, err error) {
 	fail := func(code int, msg string, args ...interface{}) {
-		if code == StatusInternalServerError {
+		if code == http.StatusInternalServerError {
 			msg = "internal error: " + msg
 		}
 		http.Error(w, fmt.Sprintf(msg, args...), code)
@@ -75,33 +84,10 @@ func (srv *myServer) writeError(w http.ResponseWriter, err error) {
 		return
 	}
 	// Mint an appropriate macaroon and send it back to the client.
-	m, err := srv.svc.NewMacaroon(verr.RequiredCapability, caveats)
+	m, err := srv.svc.NewMacaroon("", nil, verr.RequiredCapability, caveats)
 	if err != nil {
 		fail(http.StatusInternalServerError, "cannot mint macaroon: %v", err)
 		return
 	}
-	httpbakery.WriteDischargeRequiredError(w, m)
-}
-
-var canAccessMe = &httpbakery.Capability{
-	Id: "can-access-me",
-	Caveats: []bakery.Caveat{
-		// TODO this won't work - perhaps we
-		// should have a function that creates the
-		// caveats when needed instead of a literal slice.
-		checkers.ExpiresBefore(time.Now().Add(5 * time.Minute)),
-		checkers.ThirdParty(AuthServerLocation, "access-allowed"),
-	},
-}
-
-func newChecker(req *bakery.Request) bakery.FirstPartyCaveatChecker {
-	return checkers.Map{
-		"peer-is": func(s string) error {
-			_, arg, _ := checkers.ParseCondition(s)
-			if httpHostMatches(req.RemoteAddr, arg) {
-				return nil
-			}
-			return fmt.Errorf("host not allowed")
-		},
-	}
+	httpbakery.WriteDischargeRequiredError(w, m, verr)
 }

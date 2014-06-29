@@ -28,15 +28,12 @@ type NewServiceParams struct {
 	Location string
 
 	// Store will be used to store macaroon
-	// information locally.
+	// information locally. If it is nil,
+	// an in-memory storage will be used.
 	Store Storage
 
 	// CaveatIdEncoder is used to create third-party caveats.
 	CaveatIdEncoder CaveatIdEncoder
-}
-
-var emptyChecker FirstPartyCheckerFunc = func(string) error {
-	return ErrCaveatNotRecognized
 }
 
 // NewService returns a service which stores its macaroons
@@ -283,6 +280,12 @@ func (e *VerificationError) Error() string {
 // should return ErrCaveatNotRecognised.
 type ThirdPartyChecker interface {
 	CheckThirdPartyCaveat(caveat string) ([]Caveat, error)
+}
+
+type ThirdPartyCheckerFunc func(caveat string) ([]Caveat, error)
+
+func (c ThirdPartyCheckerFunc) CheckThirdPartyCaveat(caveat string) ([]Caveat, error) {
+	return c(caveat)
 }
 
 // FirstPartyChecker holds a function that checks

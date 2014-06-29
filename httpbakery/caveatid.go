@@ -2,6 +2,7 @@ package httpbakery
 
 import (
 	"bytes"
+	"code.google.com/p/go.crypto/nacl/box"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -11,7 +12,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"code.google.com/p/go.crypto/nacl/box"
 
 	"github.com/rogpeppe/macaroon/bakery"
 )
@@ -85,9 +85,9 @@ type caveatIdSealed struct {
 	Secret    []byte
 }
 
-// NewCaveatId implements bakery.CaveatIdEncoder.NewCaveatId.
+// EncodeCaveatId implements bakery.CaveatIdEncoder.EncodeCaveatId.
 // This is the client side of DischargeHandler's /create endpoint.
-func (enc *CaveatIdEncoder) NewCaveatId(cav bakery.Caveat, rootKey []byte) (string, error) {
+func (enc *CaveatIdEncoder) EncodeCaveatId(cav bakery.Caveat, rootKey []byte) (string, error) {
 	if cav.Location == "" {
 		return "", fmt.Errorf("cannot make caveat id for first party caveat")
 	}
@@ -236,13 +236,13 @@ func (enc *CaveatIdEncoder) publicKeyForLocation(loc string) *[32]byte {
 
 type caveatIdDecoder struct {
 	store bakery.Storage
-	key *KeyPair
+	key   *KeyPair
 }
 
 func NewCaveatIdDecoder(store bakery.Storage, key *KeyPair) bakery.CaveatIdDecoder {
 	return &caveatIdDecoder{
 		store: store,
-		key: key,
+		key:   key,
 	}
 }
 

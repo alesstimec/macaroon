@@ -1,9 +1,9 @@
 package httpbakery
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"encoding/json"
 
 	"github.com/rogpeppe/macaroon"
 )
