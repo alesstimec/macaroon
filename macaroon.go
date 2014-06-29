@@ -2,16 +2,12 @@
 // the paper "Macaroons: Cookies with Contextual Caveats for
 // Decentralized Authorization in the Cloud"
 // (http://theory.stanford.edu/~ataly/Papers/macaroons.pdf)
-//
-// It still in its very early stages, having no support for serialisation
-// and only rudimentary test coverage.
 package macaroon
 
 import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -53,7 +49,6 @@ type caveatJSON struct {
 
 // MarshalJSON implements json.Marshaler.
 func (cav *Caveat) MarshalJSON() ([]byte, error) {
-
 	cavJSON := caveatJSON{
 		Location: cav.location,
 		CID:      cav.caveatId,
@@ -155,54 +150,19 @@ func (m *Macaroon) AddFirstPartyCaveat(caveatId string) {
 	m.addCaveat(caveatId, nil, "")
 }
 
-// ThirdPartyCaveatId holds the information encoded in
-// a third-party caveat id.
-type ThirdPartyCaveatId struct {
-	RootKey []byte
-	Caveat  string
-}
-
-// DecryptThirdPartyCaveatId decrypts a third-party caveat
-// id given the shared secret.
-func DecryptThirdPartyCaveatId(secret []byte, id string) (*ThirdPartyCaveatId, error) {
-	decodedId, err := base64.StdEncoding.DecodeString(id)
-	if err != nil {
-		return nil, err
-	}
-	plain, err := decrypt(secret, decodedId)
-	if err != nil {
-		return nil, err
-	}
-	var c ThirdPartyCaveatId
-	if err := json.Unmarshal(plain, &c); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal decrypted caveat id: %v", err)
-	}
-	return &c, nil
-}
-
 // AddThirdPartyCaveat adds a third-party caveat to the macaroon,
-// using the given shared secret, caveat and location hint.
-// It returns the caveat id of the third party macaroon.
-func (m *Macaroon) AddThirdPartyCaveat(thirdPartySecret []byte, caveat string, loc string) (id string, err error) {
-	nonce, err := newNonce()
+// using the given shared root key, caveat id and location hint.
+// The caveat id should encode the root key in some
+// way, either by encrypting it with a key known to the third party
+// or by holding a reference to it stored in the third party's
+// storage.
+func (m *Macaroon) AddThirdPartyCaveat(rootKey []byte, caveatId string, loc string) error {
+	verificationId, err := encrypt(m.sig, rootKey)
 	if err != nil {
-		return "", err
+		return err
 	}
-	data, err := json.Marshal(ThirdPartyCaveatId{nonce[:], caveat})
-	if err != nil {
-		return "", err
-	}
-	caveatId, err := encrypt(thirdPartySecret, data)
-	if err != nil {
-		return "", err
-	}
-	verificationId, err := encrypt(m.sig, nonce[:])
-	if err != nil {
-		return "", err
-	}
-	encCaveatId := base64.StdEncoding.EncodeToString(caveatId)
-	m.addCaveat(encCaveatId, verificationId, loc)
-	return encCaveatId, nil
+	m.addCaveat(caveatId, verificationId, loc)
+	return nil
 }
 
 // bndForRequest binds the given macaroon
@@ -220,19 +180,28 @@ func bindForRequest(rootSig, dischargeSig []byte) []byte {
 // Verify verifies that the receiving macaroon is valid.
 // The root key must be the same that the macaroon was originally
 // minted with. The check function is called to verify each
-// first-party caveat - it may return an error the check
-// cannot be made but the answer is not necessarily false.
-// The discharge macaroons should be passed in discharges,
-// keyed by macaroon id.
+// first-party caveat - it should return an error if the
+// condition is not met.
+//
+// The discharge macaroons should be provided in discharges.
 //
 // Verify returns true if the verification succeeds; if returns
 // (false, nil) if the verification fails, and (false, err) if
 // the verification cannot be asserted (but may not be false).
-func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) error, discharges map[string]*Macaroon) error {
+//
+// TODO(rog) is there a possible DOS attack that can cause this
+// function to infinitely recurse?
+func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) error, discharges []*Macaroon) error {
+	// TODO(rog) consider distinguishing between classes of
+	// check error - some errors may be resolved by minting
+	// a new macaroon; others may not.
 	return m.verify(m.sig, rootKey, check, discharges)
 }
 
-func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat string) error, discharges map[string]*Macaroon) error {
+func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat string) error, discharges []*Macaroon) error {
+	if len(rootSig) == 0 {
+		rootSig = m.sig
+	}
 	caveatSig := keyedHash(rootKey, m.id)
 	for i, cav := range m.caveats {
 		if cav.IsThirdParty() {
@@ -240,15 +209,30 @@ func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat stri
 			if err != nil {
 				return fmt.Errorf("failed to decrypt caveat %d signature: %v", i, err)
 			}
-			dm, ok := discharges[string(cav.caveatId)]
-			if !ok {
-				return fmt.Errorf("cannot find discharge macaroon for caveat %d", i)
+			// We choose an arbitrary error from one of the
+			// possible discharge macaroon verifications
+			// if there's more than one discharge macaroon
+			// with the required id.
+			var verifyErr error
+			found := false
+			for _, dm := range discharges {
+				if dm.Id() != cav.caveatId {
+					continue
+				}
+				found = true
+				verifyErr = dm.verify(rootSig, cavKey, check, discharges)
+				if verifyErr == nil {
+					break
+				}
 			}
-			if err := dm.verify(rootSig, cavKey, check, discharges); err != nil {
-				return err
+			if !found {
+				return fmt.Errorf("cannot find discharge macaroon for caveat %q", cav.caveatId)
+			}
+			if verifyErr != nil {
+				return verifyErr
 			}
 		} else {
-			if err := check(string(cav.caveatId)); err != nil {
+			if err := check(cav.caveatId); err != nil {
 				return err
 			}
 		}
