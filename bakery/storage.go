@@ -75,12 +75,12 @@ type storage struct {
 }
 
 func (s storage) Get(location string) (*storageItem, error) {
-	s, err := s.store.Get(location)
+	itemStr, err := s.store.Get(location)
 	if err != nil {
 		return nil, err
 	}
 	var item storageItem
-	if err := json.Unmarshal([]byte(s), &item); err != nil {
+	if err := json.Unmarshal([]byte(itemStr), &item); err != nil {
 		return nil, fmt.Errorf("badly formatted item in store: %v", err)
 	}
 	return &item, nil

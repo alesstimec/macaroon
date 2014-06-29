@@ -157,10 +157,13 @@ func (req *Request) AddClientMacaroon(m *macaroon.Macaroon) {
 }
 
 // NewMacaroon implements NewMacarooner.NewMacaroon.
-func (svc *Service) NewMacaroon(id string, capability string, caveats []Caveat) (*macaroon.Macaroon, error) {
-	rootKey, err := randomBytes(24)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate root key for new macaroon: %v", err)
+func (svc *Service) NewMacaroon(id string, rootKey []byte, capability string, caveats []Caveat) (*macaroon.Macaroon, error) {
+	if rootKey == nil {
+		newRootKey, err := randomBytes(24)
+		if err != nil {
+			return nil, fmt.Errorf("cannot generate root key for new macaroon: %v", err)
+		}
+		rootKey = newRootKey
 	}
 	if id == "" {
 		idBytes, err := randomBytes(24)
@@ -245,7 +248,7 @@ func (req *Request) Check(capability string) error {
 	}
 	return &VerificationError{
 		RequiredCapability: capability,
-		Reason: anError,
+		Reason:             anError,
 	}
 }
 
@@ -254,6 +257,10 @@ var ErrCaveatNotRecognized = fmt.Errorf("caveat not recognized")
 type VerificationError struct {
 	RequiredCapability string
 	Reason             error
+}
+
+func (e *VerificationError) Error() string {
+	return fmt.Sprintf("verification failed: %v", e.Reason)
 }
 
 // TODO(rog) consider possible options for checkers:

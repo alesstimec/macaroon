@@ -4,8 +4,9 @@ import "github.com/rogpeppe/macaroon"
 
 // NewMacaroon mints a new macaroon with the given id, capability and caveats.
 // If the id is empty, a random id will be used.
+// If rootKey is nil, a random root key will be used.
 type NewMacarooner interface {
-	NewMacaroon(id string, capability string, caveats []Caveat) (*macaroon.Macaroon, error)
+	NewMacaroon(id string, rootKey []byte, capability string, caveats []Caveat) (*macaroon.Macaroon, error)
 }
 
 // A Discharger can be used to discharge third party macaroons
@@ -32,5 +33,5 @@ func (d *Discharger) Discharge(id string) (*macaroon.Macaroon, error) {
 	if err != nil {
 		return nil, err
 	}
-	return d.Factory.NewMacaroon(id, "", caveats)
+	return d.Factory.NewMacaroon(id, rootKey, "", caveats)
 }
