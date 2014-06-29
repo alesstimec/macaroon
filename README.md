@@ -6,9 +6,6 @@ The macaroon package implements macaroons as described in the paper "Macaroons:
 Cookies with Contextual Caveats for Decentralized Authorization in the Cloud"
 (http://theory.stanford.edu/~ataly/Papers/macaroons.pdf)
 
-It still in its very early stages, having no support for serialisation and only
-rudimentary test coverage.
-
 ## Usage
 
 #### type Caveat
@@ -71,11 +68,12 @@ AddFirstPartyCaveat adds a caveat that will be verified by the target service.
 #### func (*Macaroon) AddThirdPartyCaveat
 
 ```go
-func (m *Macaroon) AddThirdPartyCaveat(thirdPartySecret []byte, caveat string, loc string) (id string, err error)
+func (m *Macaroon) AddThirdPartyCaveat(rootKey []byte, caveatId string, loc string) error
 ```
 AddThirdPartyCaveat adds a third-party caveat to the macaroon, using the given
-shared secret, caveat and location hint. It returns the caveat id of the third
-party macaroon.
+shared root key, caveat id and location hint. The caveat id should encode the
+root key in some way, either by encrypting it with a key known to the third
+party or by holding a reference to it stored in the third party's storage.
 
 #### func (*Macaroon) Bind
 
@@ -140,36 +138,21 @@ UnmarshalJSON implements json.Unmarshaler.
 #### func (*Macaroon) Verify
 
 ```go
-func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) (bool, error), discharges map[string]*Macaroon) (bool, error)
+func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) error, discharges []*Macaroon) error
 ```
 Verify verifies that the receiving macaroon is valid. The root key must be the
 same that the macaroon was originally minted with. The check function is called
-to verify each first-party caveat - it may return an error the check cannot be
-made but the answer is not necessarily false. The discharge macaroons should be
-passed in discharges, keyed by macaroon id.
+to verify each first-party caveat - it should return an error if the condition
+is not met.
+
+The discharge macaroons should be provided in discharges.
 
 Verify returns true if the verification succeeds; if returns (false, nil) if the
 verification fails, and (false, err) if the verification cannot be asserted (but
 may not be false).
 
-#### type ThirdPartyCaveatId
-
-```go
-type ThirdPartyCaveatId struct {
-	RootKey []byte
-	Caveat  string
-}
-```
-
-ThirdPartyCaveatId holds the information encoded in a third-party caveat id.
-
-#### func  DecryptThirdPartyCaveatId
-
-```go
-func DecryptThirdPartyCaveatId(secret []byte, id string) (*ThirdPartyCaveatId, error)
-```
-DecryptThirdPartyCaveatId decrypts a third-party caveat id given the shared
-secret.
+TODO(rog) is there a possible DOS attack that can cause this function to
+infinitely recurse?
 
 #### type Verifier
 
@@ -186,7 +169,7 @@ type Verifier interface {
 ## Usage
 
 ```go
-var ErrCaveatNotRecognized = "caveat not recogniz.ed"
+var ErrCaveatNotRecognized = fmt.Errorf("caveat not recognized")
 ```
 
 ```go
@@ -226,52 +209,51 @@ party at the given location, which should be a fully qualified URL that refers
 to a service which implements the name space implemented by
 Service.DischargeHandler.
 
-#### type CaveatIdMaker
+#### type CaveatIdDecoder
 
 ```go
-type CaveatIdMaker interface {
-	NewCaveatId(caveat Caveat, secret []byte) (string, error)
+type CaveatIdDecoder interface {
+	DecodeCaveatId(id string) (rootKey []byte, condition string, err error)
 }
 ```
 
-CaveatIdMaker can create caveat ids for third parties. It is left abstract to
+CaveatIdDecoder decodes caveat ids created by a CaveatIdEncoder.
+
+#### type CaveatIdEncoder
+
+```go
+type CaveatIdEncoder interface {
+	EncodeCaveatId(caveat Caveat, rootKey []byte) (string, error)
+}
+```
+
+CaveatIdEncoder can create caveat ids for third parties. It is left abstract to
 allow location-dependent caveat id creation.
-
-#### type DischargeRequiredError
-
-```go
-type DischargeRequiredError struct {
-	Macaroon *macaroon.Macaroon
-}
-```
-
-DischargeRequiredError represents an error that occurs when an operation
-requires permissions which are not available. The Macaroon field holds a
-macaroon which must be discharged for the original operation to succeed.
 
 #### type Discharger
 
 ```go
 type Discharger struct {
+	// Checker is used to check the caveat's condition.
+	Checker ThirdPartyChecker
+
+	// Decoder is used to decode the caveat id.
+	Decoder CaveatIdDecoder
+
+	// Factory is used to create the macaroon.
+	// Note that *Service implements NewMacarooner.
+	Factory NewMacarooner
 }
 ```
 
-Discharge can act as a discharger for third-party caveats.
-
-#### func  NewDischarger
-
-```go
-func NewDischarger(store Storage, checker ThirdPartyChecker) *Discharger
-```
-NewDischarger creates a new Discharger that uses the given store for storing
-macaroons and given checker for checking third-party caveats.
+A Discharger can be used to discharge third party macaroons
 
 #### func (*Discharger) Discharge
 
 ```go
-func (d *Discharger) Discharge(location, id string) (*macaroon.Macaroon, error)
+func (d *Discharger) Discharge(id string) (*macaroon.Macaroon, error)
 ```
-Discharge attempts to discharge the macaroon at the given location with the
+Discharge creates a macaroon that discharges the third party caveat with the
 given id.
 
 #### type FirstPartyChecker
@@ -300,6 +282,38 @@ type FirstPartyCheckerFunc func(caveat string) error
 func (c FirstPartyCheckerFunc) CheckFirstPartyCaveat(caveat string) error
 ```
 
+#### type NewMacarooner
+
+```go
+type NewMacarooner interface {
+	NewMacaroon(id string, rootKey []byte, capability string, caveats []Caveat) (*macaroon.Macaroon, error)
+}
+```
+
+NewMacaroon mints a new macaroon with the given id, capability and caveats. If
+the id is empty, a random id will be used. If rootKey is nil, a random root key
+will be used.
+
+#### type NewServiceParams
+
+```go
+type NewServiceParams struct {
+	// Location will be set as the location of any macaroons
+	// minted by the service.
+	Location string
+
+	// Store will be used to store macaroon
+	// information locally. If it is nil,
+	// an in-memory storage will be used.
+	Store Storage
+
+	// CaveatIdEncoder is used to create third-party caveats.
+	CaveatIdEncoder CaveatIdEncoder
+}
+```
+
+NewServiceParams holds the parameters for a NewService call.
+
 #### type Request
 
 ```go
@@ -324,12 +338,11 @@ will be taken into account when req.Check is called.
 #### func (*Request) Check
 
 ```go
-func (req *Request) Check(capability *Capability) error
+func (req *Request) Check(capability string) error
 ```
-Check checks whether the given caveats hold true. If they do not hold true
-because some third party caveat is not available, CheckCaveats returns a
-DischargeRequiredError holding a macaroon that must be discharged for the given
-caveats to be fulfilled.
+Check checks that the client has the given capability. If the verification fails
+in a way which might be remediable, it returns a VerificatonError that describes
+the error.
 
 #### type Service
 
@@ -345,34 +358,39 @@ authorization checks from other services.
 #### func  NewService
 
 ```go
-func NewService(
-	location string,
-	store Storage,
-	checker FirstPartyChecker,
-	caveatIdMaker CaveatIdMaker,
-) *Service
+func NewService(p NewServiceParams) *Service
 ```
 NewService returns a service which stores its macaroons in the given storage.
 The given checker function is used to check the validity of caveats. Macaroons
 generated by the service will be associated with the given location.
 
-#### func (*Service) Checker
+#### func (*Service) AddCaveat
 
 ```go
-func (svc *Service) Checker() FirstPartyChecker
+func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav Caveat) error
 ```
-Checker returns the checker used by the service.
+AddCaveat adds a caveat to the given macaroon.
+
+#### func (*Service) NewMacaroon
+
+```go
+func (svc *Service) NewMacaroon(id string, rootKey []byte, capability string, caveats []Caveat) (*macaroon.Macaroon, error)
+```
+NewMacaroon implements NewMacarooner.NewMacaroon.
 
 #### func (*Service) NewRequest
 
 ```go
-func (svc *Service) NewRequest(clientId string, checker FirstPartyChecker) *Request
+func (svc *Service) NewRequest(checker FirstPartyChecker) *Request
 ```
 NewRequest returns a new client request object that uses checker to verify
-caveats. If checker is nil, the service's checker will be used. The clientId, if
-non-empty, will be used to associate the request with others with the same id -
-third party caveats will be shared between requests with the same clientId,
-allowing a given client to cache them.
+caveats.
+
+#### func (*Service) Store
+
+```go
+func (svc *Service) Store() Storage
+```
 
 #### type Storage
 
@@ -393,8 +411,8 @@ type Storage interface {
 }
 ```
 
-Storage defines storage for macaroons. TODO(rog) define whether these methods
-must be thread-safe or not.
+Storage defines storage for macaroons. Calling its methods concurrently is
+allowed.
 
 #### func  NewMemStorage
 
@@ -418,6 +436,35 @@ caveats that will be added to the discharge macaroon.
 
 If the caveat kind was not recognised, the checker should return
 ErrCaveatNotRecognised.
+
+#### type ThirdPartyCheckerFunc
+
+```go
+type ThirdPartyCheckerFunc func(caveat string) ([]Caveat, error)
+```
+
+
+#### func (ThirdPartyCheckerFunc) CheckThirdPartyCaveat
+
+```go
+func (c ThirdPartyCheckerFunc) CheckThirdPartyCaveat(caveat string) ([]Caveat, error)
+```
+
+#### type VerificationError
+
+```go
+type VerificationError struct {
+	RequiredCapability string
+	Reason             error
+}
+```
+
+
+#### func (*VerificationError) Error
+
+```go
+func (e *VerificationError) Error() string
+```
 # checkers
 --
     import "github.com/rogpeppe/macaroon/bakery/checkers"
@@ -427,14 +474,8 @@ ErrCaveatNotRecognised.
 
 ```go
 var Std = Map{
-	"expires-before": bakery.FirstPartyCheckerFunc(expiresBefore),
+	"time-before": bakery.FirstPartyCheckerFunc(timeBefore),
 }
-```
-
-#### func  ExpiresBefore
-
-```go
-func ExpiresBefore(t time.Time) bakery.Caveat
 ```
 
 #### func  FirstParty
@@ -468,10 +509,16 @@ falls back to using c1 if c0 returns bakery.ErrCaveatNotRecognized.
 func ThirdParty(location, identifier string, args ...interface{}) bakery.Caveat
 ```
 
+#### func  TimeBefore
+
+```go
+func TimeBefore(t time.Time) bakery.Caveat
+```
+
 #### type Map
 
 ```go
-type Map map[string]bakery.FirstPartyChecker
+type Map map[string]bakery.FirstPartyCheckerFunc
 ```
 
 
@@ -489,8 +536,6 @@ type StructuredCaveat struct {
 	Args       []interface{}
 }
 ```
-# example
---
 # httpbakery
 --
     import "github.com/rogpeppe/macaroon/httpbakery"
@@ -498,10 +543,16 @@ type StructuredCaveat struct {
 
 ## Usage
 
-#### func  DischargeHandler
+#### func  AddDischargeHandler
 
 ```go
-func DischargeHandler(store bakery.Storage, checker bakery.ThirdPartyChecker, key *KeyPair) http.Handler
+func AddDischargeHandler(
+	root string,
+	mux *http.ServeMux,
+	svc *bakery.Service,
+	key *KeyPair,
+	checker func(req *http.Request, cav string) ([]bakery.Caveat, error),
+)
 ```
 DischargeHandler returns an HTTP handler that issues discharge macaroons to
 clients after using the given check function to ensure that the given client is
@@ -523,7 +574,7 @@ POST /discharge
 
     params:
     	id: id of macaroon to discharge
-    	location: location of original macaroon (optional)
+    	location: location of original macaroon (optional (?))
     result:
     	{
     		Macaroon: macaroon in json format
@@ -533,8 +584,8 @@ POST /discharge
 POST /create
 
     params:
-    	caveat: caveat to discharge
-    	targetLocation: location of target service
+    	condition: caveat condition to discharge
+    	rootkey: root key of discharge caveat
     result:
     	{
     		CaveatID: string
@@ -559,50 +610,54 @@ the request will be repeated with those attached.
 If c.Jar field is non-nil, the macaroons will be stored there and made available
 to subsequent requests.
 
-#### func  NewHandler
+#### func  NewCaveatIdDecoder
 
 ```go
-func NewHandler(svc *bakery.Service, handler http.Handler) http.Handler
+func NewCaveatIdDecoder(store bakery.Storage, key *KeyPair) bakery.CaveatIdDecoder
 ```
-NewHandler returns an http handler that wraps the given handler by creating a
-Request for each http.Request that can be retrieved by calling GetRequest.
 
-#### type BakeryRequest
+#### func  WriteDischargeRequiredError
 
 ```go
-type BakeryRequest struct {
-	*bakery.Request
+func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, originalErr error) error
+```
+WriteDischargeRequiredError writes a response to w that reports the given error
+and sends the given macaroon to the client, indicating that it should be
+discharged to allow the original request to be accepted.
+
+If it returns an error, it will have written the http response anyway.
+
+The cookie value is a base-64-encoded JSON serialization of the macaroon.
+
+TODO(rog) consider an alternative approach - perhaps it would be better to
+include the macaroon directly in the response and leave it up to the client to
+add it to the cookies along with the discharge macaroons.
+
+#### type CaveatIdEncoder
+
+```go
+type CaveatIdEncoder struct {
 }
 ```
 
-BakeryRequest wraps *bakery.Request. It is defined to avoid a field clash in the
-definition of Request.
+CaveatIdEncoder implements bakery.CaveatIdEncoder. It knows how to make caveat
+ids by communicating with the caveat id creation service served by
+DischargeHandler, and also how to create caveat ids using public key
+cryptography (also recognised by the DischargeHandler service).
 
-#### type CaveatIdMaker
+#### func  NewCaveatIdEncoder
 
 ```go
-type CaveatIdMaker struct {
-}
+func NewCaveatIdEncoder(key *KeyPair) (*CaveatIdEncoder, error)
 ```
+NewCaveatIdEncoder returns a new CaveatIdEncoder key, which should have been
+created using the NACL box.GenerateKey function. The keys may be nil, in which
+case new keys will be generated automatically.
 
-CaveatIdMaker implements bakery.CaveatIdMaker. It knows how to make caveat ids
-by communicating with the caveat id creation service served by DischargeHandler,
-and also how to create caveat ids using public key cryptography (also recognised
-by the DischargeHandler service).
-
-#### func  NewCaveatIdMaker
+#### func (*CaveatIdEncoder) AddPublicKeyForLocation
 
 ```go
-func NewCaveatIdMaker(key *KeyPair) (*CaveatIdMaker, error)
-```
-NewCaveatIdMaker returns a new CaveatIdMaker key, which should have been created
-using the NACL box.GenerateKey function. The keys may be nil, in which case new
-keys will be generated automatically.
-
-#### func (*CaveatIdMaker) AddPublicKeyForLocation
-
-```go
-func (m *CaveatIdMaker) AddPublicKeyForLocation(loc string, prefix bool, key *[32]byte)
+func (enc *CaveatIdEncoder) AddPublicKeyForLocation(loc string, prefix bool, key *[32]byte)
 ```
 AddPublicKeyForLocation specifies that third party caveats for the given
 location will be encrypted with the given public key. If prefix is true, any
@@ -610,19 +665,13 @@ locations with loc as a prefix will be also associated with the given key. The
 longest prefix match will be chosen. TODO(rog) perhaps string might be a better
 representation of public keys?
 
-#### func (*CaveatIdMaker) NewCaveatId
+#### func (*CaveatIdEncoder) EncodeCaveatId
 
 ```go
-func (m *CaveatIdMaker) NewCaveatId(cav bakery.Caveat, secret []byte) (string, error)
+func (enc *CaveatIdEncoder) EncodeCaveatId(cav bakery.Caveat, rootKey []byte) (string, error)
 ```
-NewCaveatId implements bakery.CaveatIdMaker.NewCaveatId.
-
-#### type FirstPartyCaveat
-
-```go
-type FirstPartyCaveat func(req *http.Request, caveat string) error
-```
-
+EncodeCaveatId implements bakery.CaveatIdEncoder.EncodeCaveatId. This is the
+client side of DischargeHandler's /create endpoint.
 
 #### type KeyPair
 
@@ -638,34 +687,6 @@ type KeyPair struct {
 func GenerateKey() (*KeyPair, error)
 ```
 
-#### type Request
-
-```go
-type Request struct {
-	*http.Request
-	BakeryRequest
-}
-```
-
-Request holds a request invoked through a handler returned by NewHandler. It
-wraps the original http request and the associated bakery request.
-
-#### func  GetRequest
-
-```go
-func GetRequest(req *http.Request) *Request
-```
-GetRequest retrieves the request for the given http request, which must have be
-a currently outstanding request invoked through a handler returned by
-NewHandler. It panics if there is no associated request.
-
-#### type ThirdPartyCaveat
-
-```go
-type ThirdPartyCaveat func(req *http.Request, caveat string) ([]bakery.Caveat, error)
-```
-
-
 #### type ThirdPartyCaveatId
 
 ```go
@@ -673,11 +694,13 @@ type ThirdPartyCaveatId struct {
 	ThirdPartyPublicKey []byte `json:",omitempty"`
 	FirstPartyPublicKey []byte `json:",omitempty"`
 	Nonce               []byte `json:",omitempty"`
-	Id                  []byte
+	Id                  string
 }
 ```
 
 ThirdPartyCaveatId defines the format of a third party caveat id. If
 ThirdPartyPublicKey is non-empty, then both FirstPartyPublicKey and Nonce must
-be set, and the id will have been encrypted with the third party key. If not,
-the Id holds an id
+be set, and the id will have been encrypted with the third party public key and
+base64-encoded.
+
+If not, the Id holds an id that was created by the third party.
