@@ -4,8 +4,13 @@
 package httpbakery
 
 import (
+	"encoding/base64"
 	"fmt"
+	"log"
+	"net/http"
+	"strings"
 
+	"github.com/rogpeppe/macaroon"
 	"github.com/rogpeppe/macaroon/bakery"
 )
 
@@ -62,4 +67,29 @@ func NewService(p NewServiceParams) (*Service, error) {
 // of public keys?
 func (svc *Service) AddPublicKeyForLocation(loc string, prefix bool, publicKey *[32]byte) {
 	svc.caveatIdEncoder.addPublicKeyForLocation(loc, prefix, publicKey)
+}
+
+// NewRequest returns a new request, converting cookies from the
+// HTTP request into macaroons in the bakery request when they're
+// found. Mmm.
+func (svc *Service) NewRequest(httpReq *http.Request, checker bakery.FirstPartyChecker) *bakery.Request {
+	req := svc.Service.NewRequest(checker)
+	log.Printf("server found %d cookies", len(httpReq.Cookies()))
+	for _, cookie := range httpReq.Cookies() {
+		log.Printf("considering cookie %s", cookie.Name)
+		if !strings.HasPrefix(cookie.Name, "macaroon-") {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(cookie.Value)
+		if err != nil {
+			log.Printf("cannot base64-decode cookie: %v", err)
+			continue
+		}
+		var m macaroon.Macaroon
+		if err := m.UnmarshalJSON(data); err != nil {
+			log.Printf("cannot unmarshal macaroon from cookie: %v", err)
+		}
+		req.AddClientMacaroon(&m)
+	}
+	return req
 }

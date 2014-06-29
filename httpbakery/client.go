@@ -1,9 +1,11 @@
 package httpbakery
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -44,11 +46,37 @@ func Do(c *http.Client, req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return nil, fmt.Errorf("obtained %d macaroons", len(macaroons))
+
+	// Bind the discharge macaroons to the original macaroon.
+	for _, m := range macaroons {
+		m.Bind(resp.Macaroon.Signature())
+	}
+	macaroons = append(macaroons, resp.Macaroon)
+	for _, m := range macaroons {
+		if err := addCookie(req, m); err != nil {
+			return nil, fmt.Errorf("cannot add cookie: %v", err)
+		}
+	}
+	log.Printf("trying again...")
+	// Try again with our newly acquired discharge macaroons
+	return c.Do(req)
+}
+
+func addCookie(req *http.Request, m *macaroon.Macaroon) error {
+	data, err := m.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  fmt.Sprintf("macaroon-%x", m.Signature()),
+		Value: base64.StdEncoding.EncodeToString(data),
+		// TODO(rog) other fields
+	})
+	return nil
 }
 
 func dischargeMacaroon(m *macaroon.Macaroon) ([]*macaroon.Macaroon, error) {
-	macaroons := []*macaroon.Macaroon{m}
+	var macaroons []*macaroon.Macaroon
 	for _, cav := range m.Caveats() {
 		if cav.Location() == "" {
 			continue

@@ -19,6 +19,6 @@ func client(serverEndpoint string) {
 		log.Fatalf("GET failed: %v", err)
 	}
 	defer resp.Body.Close()
-	log.Printf("GET succeeded")
+	log.Printf("GET %s succeeded. status %s", serverEndpoint, resp.Status)
 	io.Copy(os.Stdout, resp.Body)
 }

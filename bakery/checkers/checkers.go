@@ -27,7 +27,7 @@ var Std = Map{
 
 func TimeBefore(t time.Time) bakery.Caveat {
 	return bakery.Caveat{
-		Condition: "time-before" + t.Format(time.RFC3339),
+		Condition: "time-before " + t.Format(time.RFC3339),
 	}
 }
 
