@@ -1,10 +1,22 @@
 package httpbakery
+import (
+	"crypto/rand"
+	"fmt"
+	"encoding/json"
+	"net/http"
+	"path"
+	"encoding/base64"
+
+	"github.com/rogpeppe/macaroon"
+	"github.com/rogpeppe/macaroon/bakery"
+)
 
 // TODO(rog) perhaps rename this file to "thirdparty.go" ?
 
 type dischargeHandler struct {
-	discharger *baker.Discharger
+	discharger *bakery.Discharger
 	key     *KeyPair
+	store bakery.Storage
 }
 
 // DischargeHandler returns an HTTP handler that issues discharge macaroons
@@ -62,11 +74,12 @@ func AddDischargeHandler(
 			Factory: svc,
 		},
 		key: key,
+		store: svc.Store(),
 	}
-	mux.HandleFunc(path.Join(root, "discharge"), d.discharge)
-	mux.HandleFunc(path.Join(root, "create"), d.create)
+	mux.HandleFunc(path.Join(root, "discharge"), d.serveDischarge)
+	mux.HandleFunc(path.Join(root, "create"), d.serveCreate)
 	if key != nil {
-		mux.HandleFunc(path.Join(root, "publickey"), d.publicKey)
+		mux.HandleFunc(path.Join(root, "publickey"), d.servePublicKey)
 	}
 }
 
@@ -74,7 +87,7 @@ type dischargeResponse struct {
 	Macaroon *macaroon.Macaroon
 }
 
-func (d *discharger) discharge(w http.ResponseWriter, req *http.Request) {
+func (d *dischargeHandler) serveDischarge(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -97,6 +110,14 @@ func (d *discharger) discharge(w http.ResponseWriter, req *http.Request) {
 	w.Write(respBytes)
 }
 
+func (d *dischargeHandler) internalError(w http.ResponseWriter, f string, a ...interface{}) {
+	http.Error(w, fmt.Sprintf(f, a...), http.StatusInternalServerError)
+}
+
+func (d *dischargeHandler) badRequest(w http.ResponseWriter, f string, a ...interface{}) {
+	http.Error(w, fmt.Sprintf(f, a...), http.StatusBadRequest)
+}
+
 type thirdPartyCaveatIdRecord struct {
 	RootKey []byte
 	Condition string
@@ -106,7 +127,7 @@ type createResponse struct {
 	CaveatId string
 }
 
-func (d *discharger) create(w http.ResponseWriter, r *http.Request) {
+func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	condition := req.Form.Get("condition")
 	rootKeyStr := req.Form.Get("root-key")
@@ -115,7 +136,7 @@ func (d *discharger) create(w http.ResponseWriter, r *http.Request) {
 		d.badRequest(w, "empty values for condition or root key")
 		return
 	}
-	rootKey, err := base64.StdEncoding.DecodeFromString(rootKeyStr)
+	rootKey, err := base64.StdEncoding.DecodeString(rootKeyStr)
 	if err != nil {
 		d.badRequest(w, "cannot base64-decode root key: %v", err)
 		return
@@ -123,46 +144,51 @@ func (d *discharger) create(w http.ResponseWriter, r *http.Request) {
 	// TODO(rog) what about expiry times?
 	idBytes, err := randomBytes(24)
 	if err != nil {
-		d.internalError(w, fmt.Errorf("cannot generate random key: %v", err))
+		d.internalError(w, "cannot generate random key: %v", err)
 		return
 	}
 	internalId := fmt.Sprintf("third-party-%x", idBytes)
-	err = d.store.Put(internalId, thirdPartyCaveatIdRecord{
+	recordBytes, err := json.Marshal(thirdPartyCaveatIdRecord{
 		Condition: condition,
 		RootKey: rootKey,
 	})
 	if err != nil {
-		d.internalError(w, fmt.Errorf("cannot store caveat id record: %v", err))
+		d.internalError(w, "cannot marshal caveat id record: %v", err)
 		return
 	}
-	idBytes, err := json.Marshal(&ThirdPartyCaveatId{
+	err = d.store.Put(internalId, string(recordBytes))
+	if err != nil {
+		d.internalError(w, "cannot store caveat id record: %v", err)
+		return
+	}
+	tpidBytes, err := json.Marshal(&ThirdPartyCaveatId{
 		Id: internalId,
 	})
 	if err != nil {
-		d.internalError(w, fmt.Errorf("cannot marshal caveat id: %v", err))
+		d.internalError(w, "cannot marshal caveat id: %v", err)
 		return
 	}
 	respBytes, err := json.Marshal(createResponse{
-		CaveatId: base64.StdEncoding.EncodeToString(idBytes),
+		CaveatId: base64.StdEncoding.EncodeToString(tpidBytes),
 	})
 	if err != nil {
-		d.internalError(w, fmt.Errorf("cannot marshal caveat response: %v", err))
+		d.internalError(w, "cannot marshal caveat response: %v", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(respBytes)	
 }
 
-func (d *discharger) publickey(w http.ResponseWriter, r *http.Request) {
+func (d *dischargeHandler) servePublicKey(w http.ResponseWriter, r *http.Request) {
 	// TODO(rog) implement this
 	http.Error(w, "not implemented yet", http.StatusNotImplemented)
 }
 
-func randomBytes(n int) (byte, error) {
+func randomBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
 	_, err := rand.Read(b)
 	if err != nil {
-		return fmt.Errorf("cannot generate %d random bytes: %v", n, err)
+		return nil, fmt.Errorf("cannot generate %d random bytes: %v", n, err)
 	}
-	return nil
+	return b, nil
 }

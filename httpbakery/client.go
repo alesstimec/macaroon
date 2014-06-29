@@ -1,4 +1,7 @@
 package httpbakery
+import (
+	"net/http"
+)
 
 // Do makes an http request to the given client.
 // If the request fails with a discharge-required error,

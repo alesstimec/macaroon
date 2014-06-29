@@ -1,9 +1,17 @@
 package httpbakery
 
+import (
+	"fmt"
+	"net/http"
+	"encoding/json"
+
+	"github.com/rogpeppe/macaroon"
+)
+
 type dischargeRequestedResponse struct {
-	Error string
+	Error     string
 	ErrorCode string
-	Macaroon *macaroon.Macaroon
+	Macaroon  *macaroon.Macaroon
 }
 
 // WriteDischargeRequiredError writes a response to w that reports the
@@ -25,10 +33,10 @@ func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, or
 	if originalErr == nil {
 		originalErr = fmt.Errorf("unauthorized")
 	}
-	respData, err := m.MarshalJSON(dischargeRequested{
-		Error: originalErr.Error(),
+	respData, err := json.Marshal(dischargeRequestedResponse{
+		Error:     originalErr.Error(),
 		ErrorCode: "macaroon discharge required",
-		Macaroon: m,
+		Macaroon:  m,
 	})
 	if err != nil {
 		err = fmt.Errorf("internal error: cannot marshal response: %v", err)
@@ -36,7 +44,7 @@ func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, or
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	http.WriteHeader(StatusProxyAuthRequired)
+	w.WriteHeader(http.StatusProxyAuthRequired)
 	w.Write(respData)
 	return nil
 }

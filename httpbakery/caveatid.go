@@ -1,6 +1,17 @@
 package httpbakery
+
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
+	"code.google.com/p/go.crypto/nacl/box"
 
 	"github.com/rogpeppe/macaroon/bakery"
 )
@@ -25,7 +36,7 @@ type CaveatIdEncoder struct {
 
 type publicKeyRecord struct {
 	location string
-	prefix   string
+	prefix   bool
 	key      [32]byte
 }
 
@@ -52,16 +63,14 @@ func GenerateKey() (*KeyPair, error) {
 // in which case new keys will be generated automatically.
 func NewCaveatIdEncoder(key *KeyPair) (*CaveatIdEncoder, error) {
 	enc := &CaveatIdEncoder{}
-	if privateKey == nil {
-
-		var err error
-		*enc.privateKey, *enc.publicKey, err = box.GenerateKey(rand.Reader)
+	if key == nil {
+		priv, pub, err := box.GenerateKey(rand.Reader)
 		if err != nil {
 			return nil, fmt.Errorf("cannot generate key: %v", err)
 		}
+		enc.key.private, enc.key.public = *priv, *pub
 	} else {
-		*enc.privateKey = *privateKey
-		*enc.publicKey = *publicKey
+		enc.key = *key
 	}
 	return enc, nil
 }
@@ -84,9 +93,9 @@ func (enc *CaveatIdEncoder) NewCaveatId(cav bakery.Caveat, rootKey []byte) (stri
 	}
 	var id *ThirdPartyCaveatId
 	var err error
-	thirdPartyPub := publicKeyForLocation()
+	thirdPartyPub := enc.publicKeyForLocation(cav.Location)
 	if thirdPartyPub != nil {
-		id, err = enc.newEncryptedCaveatId(cav, rootKey)
+		id, err = enc.newEncryptedCaveatId(cav, rootKey, thirdPartyPub)
 	} else {
 		id, err = enc.newStoredCaveatId(cav, rootKey)
 	}
@@ -100,25 +109,25 @@ func (enc *CaveatIdEncoder) NewCaveatId(cav bakery.Caveat, rootKey []byte) (stri
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func (enc *CaveatIdEncoder) newEncryptedCaveatId(cav bakery.Caveat, rootKey []byte) (*ThirdPartyCaveatId, error) {
+func (enc *CaveatIdEncoder) newEncryptedCaveatId(cav bakery.Caveat, rootKey []byte, thirdPartyPub *[32]byte) (*ThirdPartyCaveatId, error) {
 	var nonce [24]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("cannot generate random number for nonce: %v", err)
 	}
 	plain := thirdPartyCaveatIdRecord{
-		RootKey:  rootKey,
+		RootKey:   rootKey,
 		Condition: cav.Condition,
 	}
 	plainData, err := json.Marshal(&plain)
 	if err != nil {
 		return nil, fmt.Errorf("cannot marshal %#v: %v", &plain, err)
 	}
-	sealed := box.Seal(nil, plainData, &nonce, thirdPartyPub, &m.privateKey)
+	sealed := box.Seal(nil, plainData, &nonce, thirdPartyPub, &enc.key.private)
 	return &ThirdPartyCaveatId{
 		ThirdPartyPublicKey: thirdPartyPub[:],
-		FirstPartyPublicKey: enc.publicKey[:],
+		FirstPartyPublicKey: enc.key.public[:],
 		Nonce:               nonce[:],
-		Id:              base64.StdEncoding.EncodeToString(sealed),
+		Id:                  base64.StdEncoding.EncodeToString(sealed),
 	}, nil
 }
 
@@ -126,33 +135,33 @@ func (enc *CaveatIdEncoder) newStoredCaveatId(cav bakery.Caveat, rootKey []byte)
 	// TODO(rog) fetch public key from service here, and use public
 	// key encryption if available?
 
-	// TODO(rog) check that the URL is secure?
+	// TODO(rog) check that the URL is https?
 	// Is that really just smoke and mirrors though?
 	// Are there advantages to having an unrestricted protocol?
-	url := appendURLElem("create")
-	resp, err := http.PostForm(url, url.Values{
-		"caveat": cav.Condition,
+	u := appendURLElem(cav.Location, "create")
+	httpResp, err := http.PostForm(u, url.Values{
+		"caveat": []string{cav.Condition},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("cannot create caveat id through %q: %v", url, err)
+		return nil, fmt.Errorf("cannot create caveat id through %q: %v", u, err)
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	defer httpResp.Body.Close()
+	data, err := ioutil.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read caveat id from %q: %v", url, err)
+		return nil, fmt.Errorf("failed to read caveat id from %q: %v", u, err)
 	}
 	var resp caveatIdResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal response from %q: %v", url, err)
+		return nil, fmt.Errorf("cannot unmarshal response from %q: %v", u, err)
 	}
 	if resp.Error != "" {
-		return nil, fmt.Errorf("remote error from %q: %v", url, resp.Error)
+		return nil, fmt.Errorf("remote error from %q: %v", u, resp.Error)
 	}
 	if resp.CaveatId == "" {
-		return nil, fmt.Errorf("empty caveat id returned from %q", url)
+		return nil, fmt.Errorf("empty caveat id returned from %q", u)
 	}
 	return &ThirdPartyCaveatId{
-		Id:              resp.CaveatId,
+		Id: resp.CaveatId,
 	}, nil
 }
 
@@ -169,7 +178,7 @@ func appendURLElem(u, elem string) string {
 // and Nonce must be set, and the id will have
 // been encrypted with the third party public key
 // and base64-encoded.
-// 
+//
 // If not, the Id holds an id that was created
 // by the third party.
 type ThirdPartyCaveatId struct {
@@ -192,7 +201,7 @@ func (enc *CaveatIdEncoder) AddPublicKeyForLocation(loc string, prefix bool, key
 	}
 	enc.mu.Lock()
 	defer enc.mu.Unlock()
-	enc.publicKeys = append(enc.publicKeys, publicKey{
+	enc.publicKeys = append(enc.publicKeys, publicKeyRecord{
 		location: loc,
 		prefix:   prefix,
 		key:      *key,
@@ -227,10 +236,14 @@ func (enc *CaveatIdEncoder) publicKeyForLocation(loc string) *[32]byte {
 
 type caveatIdDecoder struct {
 	store bakery.Storage
+	key *KeyPair
 }
 
 func NewCaveatIdDecoder(store bakery.Storage, key *KeyPair) bakery.CaveatIdDecoder {
-	return &caveatIdDecoder{store}
+	return &caveatIdDecoder{
+		store: store,
+		key: key,
+	}
 }
 
 func (d *caveatIdDecoder) DecodeCaveatId(id string) (rootKey []byte, condition string, err error) {
@@ -238,16 +251,16 @@ func (d *caveatIdDecoder) DecodeCaveatId(id string) (rootKey []byte, condition s
 	if err != nil {
 		return nil, "", fmt.Errorf("cannot base64-decode caveat id: %v", err)
 	}
-	var id ThirdPartyCaveatId
-	if err := json.Unmarshal(data, &id); err != nil {
+	var tpid ThirdPartyCaveatId
+	if err := json.Unmarshal(data, &tpid); err != nil {
 		return nil, "", fmt.Errorf("cannot unmarshal caveat id: %v", err)
 	}
 	var recordData []byte
 
-	if id.ThirdPartyPublicKey != nil {
-		recordData, err = d.encryptedCaveatId(id)
+	if tpid.ThirdPartyPublicKey != nil {
+		recordData, err = d.encryptedCaveatId(tpid)
 	} else {
-		recordData, err = d.storedCaveatId(id.Id)
+		recordData, err = d.storedCaveatId(tpid.Id)
 	}
 	if err != nil {
 		return nil, "", err
@@ -256,14 +269,14 @@ func (d *caveatIdDecoder) DecodeCaveatId(id string) (rootKey []byte, condition s
 	if err := json.Unmarshal(recordData, &record); err != nil {
 		return nil, "", fmt.Errorf("cannot decode third party caveat record: %v", err)
 	}
-	return item.RootKey, item.Condition, nil
+	return record.RootKey, record.Condition, nil
 }
 
 func (d *caveatIdDecoder) encryptedCaveatId(id ThirdPartyCaveatId) ([]byte, error) {
 	if d.key == nil {
 		return nil, fmt.Errorf("no public key for caveat id decryption")
 	}
-	if !bytes.Equal(d.key.public, id.ThirdPartyPublicKey) {
+	if !bytes.Equal(d.key.public[:], id.ThirdPartyPublicKey) {
 		return nil, fmt.Errorf("public key mismatch")
 	}
 	var nonce [24]byte
@@ -286,13 +299,13 @@ func (d *caveatIdDecoder) encryptedCaveatId(id ThirdPartyCaveatId) ([]byte, erro
 	if !ok {
 		return nil, fmt.Errorf("decryption of public-key encrypted caveat id failed")
 	}
-	return out
+	return out, nil
 }
 
 func (d *caveatIdDecoder) storedCaveatId(id string) ([]byte, error) {
 	str, err := d.store.Get("third-party-" + id)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return []byte(str)
+	return []byte(str), nil
 }

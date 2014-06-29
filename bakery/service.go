@@ -55,6 +55,10 @@ func NewService(p NewServiceParams) *Service {
 	}
 }
 
+func (svc *Service) Store() Storage {
+	return svc.store.store
+}
+
 // CaveatIdDecoder decodes caveat ids created by a CaveatIdEncoder.
 type CaveatIdDecoder interface {
 	DecodeCaveatId(id string) (rootKey []byte, condition string, err error)
