@@ -131,7 +131,8 @@ func (enc *caveatIdEncoder) newStoredCaveatId(cav bakery.Caveat, rootKey []byte)
 	// Are there advantages to having an unrestricted protocol?
 	u := appendURLElem(cav.Location, "create")
 	httpResp, err := http.PostForm(u, url.Values{
-		"caveat": []string{cav.Condition},
+		"condition": []string{cav.Condition},
+		"root-key": []string{base64.StdEncoding.EncodeToString(rootKey)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cannot create caveat id through %q: %v", u, err)
@@ -139,7 +140,11 @@ func (enc *caveatIdEncoder) newStoredCaveatId(cav bakery.Caveat, rootKey []byte)
 	defer httpResp.Body.Close()
 	data, err := ioutil.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read caveat id from %q: %v", u, err)
+		return nil, fmt.Errorf("failed to read body from %q: %v", u, err)
+	}
+	if httpResp.StatusCode != http.StatusOK {
+		
+		return nil, fmt.Errorf("POST %q failed with status %q (body %q)", u, httpResp.Status, data)
 	}
 	var resp caveatIdResponse
 	if err := json.Unmarshal(data, &resp); err != nil {

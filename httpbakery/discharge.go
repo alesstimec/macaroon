@@ -135,8 +135,12 @@ func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request)
 	condition := req.Form.Get("condition")
 	rootKeyStr := req.Form.Get("root-key")
 
-	if len(condition) == 0 || len(rootKeyStr) == 0 {
-		d.badRequest(w, "empty values for condition or root key")
+	if len(condition) == 0 {
+		d.badRequest(w, "empty value for condition")
+		return
+	}
+	if len(rootKeyStr) == 0 {
+		d.badRequest(w, "empty value for root key")
 		return
 	}
 	rootKey, err := base64.StdEncoding.DecodeString(rootKeyStr)

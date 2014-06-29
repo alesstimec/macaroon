@@ -38,7 +38,9 @@ var Std = Map{
 }
 
 func TimeBefore(t time.Time) bakery.Caveat {
-	return ThirdParty("time-before", t.Format(time.RFC3339))
+	return bakery.Caveat{
+		Condition: "time-before" + t.Format(time.RFC3339),
+	}
 }
 
 func timeBefore(cav string) error {
