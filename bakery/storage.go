@@ -43,6 +43,7 @@ func (s memStorage) Put(location, item string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.values[location] = item
+	return nil
 }
 
 func (s memStorage) Get(location string) (string, error) {
@@ -55,10 +56,11 @@ func (s memStorage) Get(location string) (string, error) {
 	return item, nil
 }
 
-func (s memStorage) Del(location string) {
+func (s memStorage) Del(location string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.values, location)
+	return nil
 }
 
 // storageItem is the format used to store items in

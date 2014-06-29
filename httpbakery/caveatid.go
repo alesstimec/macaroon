@@ -1,4 +1,9 @@
 package httpbakery
+import (
+	"sync"
+
+	"github.com/rogpeppe/macaroon/bakery"
+)
 
 const keyLen = 32
 

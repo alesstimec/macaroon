@@ -127,7 +127,7 @@ func (d *discharger) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	internalId := fmt.Sprintf("third-party-%x", idBytes)
-	err := d.store.Put(internalId, thirdPartyCaveatIdRecord{
+	err = d.store.Put(internalId, thirdPartyCaveatIdRecord{
 		Condition: condition,
 		RootKey: rootKey,
 	})

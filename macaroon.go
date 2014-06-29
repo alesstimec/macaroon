@@ -228,30 +228,28 @@ func bindForRequest(rootSig, dischargeSig []byte) []byte {
 // Verify returns true if the verification succeeds; if returns
 // (false, nil) if the verification fails, and (false, err) if
 // the verification cannot be asserted (but may not be false).
-func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) (bool, error), discharges map[string]*Macaroon) (bool, error) {
+func (m *Macaroon) Verify(rootKey []byte, check func(caveat string) error, discharges map[string]*Macaroon) error {
 	return m.verify(m.sig, rootKey, check, discharges)
 }
 
-func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat string) (bool, error), discharges map[string]*Macaroon) (bool, error) {
+func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat string) error, discharges map[string]*Macaroon) error {
 	caveatSig := keyedHash(rootKey, m.id)
 	for i, cav := range m.caveats {
 		if cav.IsThirdParty() {
 			cavKey, err := decrypt(caveatSig, cav.verificationId)
 			if err != nil {
-				return false, fmt.Errorf("failed to decrypt caveat %d signature: %v", i, err)
+				return fmt.Errorf("failed to decrypt caveat %d signature: %v", i, err)
 			}
 			dm, ok := discharges[string(cav.caveatId)]
 			if !ok {
-				return false, fmt.Errorf("cannot find discharge macaroon for caveat %d", i)
+				return fmt.Errorf("cannot find discharge macaroon for caveat %d", i)
 			}
-			ok, err = dm.verify(rootSig, cavKey, check, discharges)
-			if !ok {
-				return false, err
+			if err := dm.verify(rootSig, cavKey, check, discharges); err != nil {
+				return err
 			}
 		} else {
-			ok, err := check(string(cav.caveatId))
-			if !ok {
-				return false, err
+			if err := check(string(cav.caveatId)); err != nil {
+				return err
 			}
 		}
 		sig := keyedHasher(caveatSig)
@@ -263,9 +261,9 @@ func (m *Macaroon) verify(rootSig []byte, rootKey []byte, check func(caveat stri
 	// all the potentially expensive caveat checks.
 	boundSig := bindForRequest(rootSig, caveatSig)
 	if !hmac.Equal(boundSig, m.sig) {
-		return false, fmt.Errorf("signature mismatch after caveat verification")
+		return fmt.Errorf("signature mismatch after caveat verification")
 	}
-	return true, nil
+	return nil
 }
 
 // MarshalJSON implements json.Marshaler.

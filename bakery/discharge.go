@@ -24,13 +24,13 @@ type Discharger struct {
 // Discharge creates a macaroon that discharges the third party
 // caveat with the given id.
 func (d *Discharger) Discharge(id string) (*macaroon.Macaroon, error) {
-	rootKey, condition, err := d.decoder.DecodeCaveatId(id)
+	rootKey, condition, err := d.Decoder.DecodeCaveatId(id)
 	if err != nil {
 		return nil, err
 	}
-	caveats, err := d.checker.CheckThirdPartyCaveat(condition)
+	caveats, err := d.Checker.CheckThirdPartyCaveat(condition)
 	if err != nil {
 		return nil, err
 	}
-	return d.newm.NewMacaroon(id, "", caveats)
+	return d.Factory.NewMacaroon(id, "", caveats)
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/rogpeppe/macaroon/bakery"
 )
 
 func ExpiresBefore(t time.Time) bakery.Caveat {
