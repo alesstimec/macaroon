@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -130,25 +128,13 @@ func (enc *caveatIdEncoder) newStoredCaveatId(cav bakery.Caveat, rootKey []byte)
 	// Is that really just smoke and mirrors though?
 	// Are there advantages to having an unrestricted protocol?
 	u := appendURLElem(cav.Location, "create")
-	httpResp, err := http.PostForm(u, url.Values{
-		"condition": []string{cav.Condition},
-		"root-key":  []string{base64.StdEncoding.EncodeToString(rootKey)},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("cannot create caveat id through %q: %v", u, err)
-	}
-	defer httpResp.Body.Close()
-	data, err := ioutil.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read body from %q: %v", u, err)
-	}
-	if httpResp.StatusCode != http.StatusOK {
 
-		return nil, fmt.Errorf("POST %q failed with status %q (body %q)", u, httpResp.Status, data)
-	}
 	var resp caveatIdResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal response from %q: %v", u, err)
+	if err := postFormJSON(u, url.Values{
+		"condition": {cav.Condition},
+		"root-key":  {base64.StdEncoding.EncodeToString(rootKey)},
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("cannot create caveat id through %q: %v", u, err)
 	}
 	if resp.Error != "" {
 		return nil, fmt.Errorf("remote error from %q: %v", u, resp.Error)
@@ -289,7 +275,7 @@ func (d *caveatIdDecoder) encryptedCaveatId(id thirdPartyCaveatId) ([]byte, erro
 }
 
 func (d *caveatIdDecoder) storedCaveatId(id string) ([]byte, error) {
-	str, err := d.store.Get("third-party-" + id)
+	str, err := d.store.Get(id)
 	if err != nil {
 		return nil, err
 	}

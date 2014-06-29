@@ -77,6 +77,14 @@ func (cav *Caveat) UnmarshalJSON(jsonData []byte) error {
 	return nil
 }
 
+func (cav *Caveat) Id() string {
+	return cav.caveatId
+}
+
+func (cav *Caveat) Location() string {
+	return cav.location
+}
+
 // IsThirdParty reports whether the caveat must be satisfied
 // by some third party (if not, it's a first person caveat).
 func (cav *Caveat) IsThirdParty() bool {

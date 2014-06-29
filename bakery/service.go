@@ -257,7 +257,13 @@ func (req *Request) Check(capability string) error {
 	}
 }
 
-var ErrCaveatNotRecognized = fmt.Errorf("caveat not recognized")
+type CaveatNotRecognizedError struct {
+	Caveat string
+}
+
+func (e *CaveatNotRecognizedError) Error() string {
+	return fmt.Sprintf("caveat %q not recognized", e.Caveat)
+}
 
 type VerificationError struct {
 	RequiredCapability string
