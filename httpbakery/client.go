@@ -1,9 +1,9 @@
 package httpbakery
 
 import (
-	"net/http"
-	"fmt"
 	"encoding/json"
+	"fmt"
+	"net/http"
 )
 
 // Do makes an http request to the given client.

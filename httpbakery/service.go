@@ -2,6 +2,7 @@
 // package - it provides an HTTP-based implementation
 // of a macaroon client and server.
 package httpbakery
+
 import (
 	"fmt"
 
@@ -13,7 +14,7 @@ import (
 type Service struct {
 	*bakery.Service
 	caveatIdEncoder *caveatIdEncoder
-	key KeyPair
+	key             KeyPair
 }
 
 // NewServiceParams holds parameters for the NewService call.
@@ -43,12 +44,12 @@ func NewService(p NewServiceParams) (*Service, error) {
 	enc := newCaveatIdEncoder(p.Key)
 	return &Service{
 		Service: bakery.NewService(bakery.NewServiceParams{
-			Location: p.Location,
-			Store: p.Store,
+			Location:        p.Location,
+			Store:           p.Store,
 			CaveatIdEncoder: enc,
 		}),
 		caveatIdEncoder: enc,
-		key: *p.Key,
+		key:             *p.Key,
 	}, nil
 }
 

@@ -132,7 +132,7 @@ func (enc *caveatIdEncoder) newStoredCaveatId(cav bakery.Caveat, rootKey []byte)
 	u := appendURLElem(cav.Location, "create")
 	httpResp, err := http.PostForm(u, url.Values{
 		"condition": []string{cav.Condition},
-		"root-key": []string{base64.StdEncoding.EncodeToString(rootKey)},
+		"root-key":  []string{base64.StdEncoding.EncodeToString(rootKey)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cannot create caveat id through %q: %v", u, err)
@@ -143,7 +143,7 @@ func (enc *caveatIdEncoder) newStoredCaveatId(cav bakery.Caveat, rootKey []byte)
 		return nil, fmt.Errorf("failed to read body from %q: %v", u, err)
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		
+
 		return nil, fmt.Errorf("POST %q failed with status %q (body %q)", u, httpResp.Status, data)
 	}
 	var resp caveatIdResponse
