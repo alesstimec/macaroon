@@ -18,6 +18,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -25,6 +26,14 @@ import (
 
 	"github.com/rogpeppe/macaroon/bakery"
 )
+
+var getSilver bool // if true, a request to /silver is made, otherwise a request to /gold
+
+// init initializes flags
+func init() {
+	flag.BoolVar(&getSilver, "s", false, "make a request to /silver")
+	flag.Parse()
+}
 
 func main() {
 	key, err := bakery.GenerateKey()
@@ -38,7 +47,14 @@ func main() {
 	serverEndpoint := mustServe(func(endpoint string) (http.Handler, error) {
 		return targetService(endpoint, authEndpoint, authPublicKey)
 	})
-	resp, err := clientRequest(serverEndpoint)
+	var serverRequest string
+	if getSilver {
+		serverRequest = serverEndpoint + "/silver"
+	} else {
+		serverRequest = serverEndpoint + "/gold"
+	}
+
+	resp, err := clientRequest(serverRequest)
 	if err != nil {
 		log.Fatalf("client failed: %v", err)
 	}
